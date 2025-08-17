@@ -44,61 +44,62 @@ pipeline {
 
     // ---------- CHANGED STAGE #1 ----------
     stage('Fastlane setup') {
-      steps {
-        sh '''
-          set -euo pipefail
-          mkdir -p fastlane
+  steps {
+    sh '''
+      set -euo pipefail
+      mkdir -p fastlane
 
-          # Pick first available iPhone simulator in Shutdown state (stable)
-          DEVICE_NAME=$(xcrun simctl list devices -j | \
-            jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | select(.state=="Shutdown")) | .name' \
-            | head -n1)
+      # Pick first available iPhone simulator in Shutdown state (stable)
+      DEVICE_NAME=$(xcrun simctl list devices -j | \
+        jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | select(.state=="Shutdown") | .name' \
+        | head -n1)
 
-          if [ -z "${DEVICE_NAME:-}" ]; then
-            echo "[warn] No Shutdown iPhone found; falling back to first available iPhone"
-            DEVICE_NAME=$(xcrun simctl list devices -j | \
-              jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | .name' \
-              | head -n1)
-          fi
+      if [ -z "${DEVICE_NAME:-}" ]; then
+        echo "[warn] No Shutdown iPhone found; falling back to first available iPhone"
+        DEVICE_NAME=$(xcrun simctl list devices -j | \
+          jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | .name' \
+          | head -n1)
+      fi
 
-          if [ -z "${DEVICE_NAME:-}" ]; then
-            echo "[error] Could not find any available iPhone simulator"; exit 1
-          fi
+      if [ -z "${DEVICE_NAME:-}" ]; then
+        echo "[error] Could not find any available iPhone simulator"; exit 1
+      fi
 
-          # Find its UDID
-          UDID=$(xcrun simctl list devices -j | \
-            jq -r --arg NAME "$DEVICE_NAME" '.devices[] | .[] | select(.name==$NAME) | .udid' \
-            | head -n1)
+      # Find its UDID (match by exact name)
+      UDID=$(xcrun simctl list devices -j | \
+        jq -r --arg NAME "$DEVICE_NAME" '.devices[] | .[] | select(.name==$NAME) | .udid' \
+        | head -n1)
 
-          if [ -z "${UDID:-}" ]; then
-            echo "[error] Could not determine UDID for $DEVICE_NAME"; exit 1
-          fi
+      if [ -z "${UDID:-}" ]; then
+        echo "[error] Could not determine UDID for $DEVICE_NAME"; exit 1
+      fi
 
-          echo "$DEVICE_NAME" > .sim_device
-          echo "$UDID"       > .sim_udid
-          echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
+      echo "$DEVICE_NAME" > .sim_device
+      echo "$UDID"       > .sim_udid
+      echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
 
-          # Minimal Fastfile for unit tests
-          cat > fastlane/Fastfile <<'RUBY'
-          default_platform(:ios)
-          platform :ios do
-            desc "Run unit tests on simulator"
-            lane :unit_test do
-              device = ENV['SIM_DEVICE'] || "iPhone 16 Pro"
-              scan(
-                scheme: "sample-apps-ios-simple-objc",
-                devices: [device],
-                build_for_testing: true,
-                clean: true,
-                output_types: "junit",
-                output_directory: "fastlane/test_output"
-              )
-            end
-          end
-          RUBY
-        '''
-      }
-    }
+      # Minimal Fastfile for unit tests
+      cat > fastlane/Fastfile <<'RUBY'
+      default_platform(:ios)
+      platform :ios do
+        desc "Run unit tests on simulator"
+        lane :unit_test do
+          device = ENV['SIM_DEVICE'] || "iPhone 16 Pro"
+          scan(
+            scheme: "sample-apps-ios-simple-objc",
+            devices: [device],
+            build_for_testing: true,
+            clean: true,
+            output_types: "junit",
+            output_directory: "fastlane/test_output"
+          )
+        end
+      end
+      RUBY
+    '''
+  }
+}
+
 
     // (Optional) small probe to show what we picked
     stage('Simulator probe') {
