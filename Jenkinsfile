@@ -69,12 +69,17 @@ echo "$DEVICE_NAME" > .sim_device
 echo "$UDID"       > .sim_udid
 echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
 
-# ---- Detect Xcode project (search subfolders) ----
-# Find the first *.xcodeproj up to 3 levels deep and make it absolute
-XCODEPROJ=$(find . -maxdepth 3 -name "*.xcodeproj" | head -n1 || true)
-[ -n "${XCODEPROJ:-}" ] || { echo "[error] No .xcodeproj found (searched subfolders)"; ls -la; exit 1; }
-XCODEPROJ=$(cd "$(dirname "$XCODEPROJ")" && pwd)/$(basename "$XCODEPROJ")
-echo "$XCODEPROJ" > .xcodeproj
+# ---- Detect Xcode project (search subfolders safely) ----
+# Clean any old cache files that could confuse 'find'
+rm -f .xcodeproj .xcodeproj_path .scheme || true
+
+# Find the first *.xcodeproj directory up to 3 levels deep
+XCODEPROJ=$(find . -maxdepth 3 -type d -name "*.xcodeproj" | head -n1 || true)
+[ -n "${XCODEPROJ:-}" ] || { echo "[error] No .xcodeproj directory found (searched subfolders)"; ls -la; exit 1; }
+
+# Make absolute
+XCODEPROJ=$(cd "$(dirname "$XCODEPROJ")" && pwd)/"$(basename "$XCODEPROJ")"
+echo "$XCODEPROJ" > .xcodeproj_path
 
 # Detect the first scheme from that project
 SCHEME=$(xcodebuild -list -json -project "$XCODEPROJ" | jq -r '.project.schemes[0]')
@@ -82,6 +87,7 @@ SCHEME=$(xcodebuild -list -json -project "$XCODEPROJ" | jq -r '.project.schemes[
 echo "$SCHEME" > .scheme
 
 echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
+
 
 # ---- Write Fastfile (reads env vars) ----
 rm -f fastlane/Fastfile
@@ -141,7 +147,7 @@ stage('Unit Tests (Simulator)') {
 set -euo pipefail
 SIM_DEVICE=$(cat .sim_device)
 SIM_UDID=$(cat .sim_udid)
-XCODEPROJ=$(cat .xcodeproj)
+XCODEPROJ=$(cat .xcodeproj_path)
 SCHEME=$(cat .scheme)
 
 echo "[info] Using simulator: $SIM_DEVICE ($SIM_UDID)"
