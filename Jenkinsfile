@@ -3,8 +3,8 @@ pipeline {
   options { ansiColor('xterm'); timestamps() }
 
   environment {
-    PATH   = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-    LC_ALL = 'en_US.UTF-8'
+    PATH   = "/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
     LANG   = 'en_US.UTF-8'
   }
 
