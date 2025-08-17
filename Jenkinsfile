@@ -43,45 +43,48 @@ pipeline {
     }
 
     // ---------- CHANGED STAGE #1 ----------
-   stage('Fastlane setup') {
+  stage('Fastlane setup') {
   steps {
     sh '''
-      set -euo pipefail
-      mkdir -p fastlane
+set -euo pipefail
+mkdir -p fastlane
 
-      # Pick first available iPhone simulator in Shutdown state (stable)
-      DEVICE_NAME=$(xcrun simctl list devices -j | \
-        jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | select(.state=="Shutdown") | .name' \
-        | head -n1)
-      if [ -z "${DEVICE_NAME:-}" ]; then
-        echo "[warn] No Shutdown iPhone found; falling back to first available iPhone"
-        DEVICE_NAME=$(xcrun simctl list devices -j | \
-          jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | .name' \
-          | head -n1)
-      fi
-      [ -n "${DEVICE_NAME:-}" ] || { echo "[error] No available iPhone simulator"; exit 1; }
+# ---- Choose a simulator (name + UDID) ----
+DEVICE_NAME=$(xcrun simctl list devices -j | \
+  jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | select(.state=="Shutdown") | .name' \
+  | head -n1)
+if [ -z "${DEVICE_NAME:-}" ]; then
+  echo "[warn] No Shutdown iPhone found; falling back to first available iPhone"
+  DEVICE_NAME=$(xcrun simctl list devices -j | \
+    jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | .name' \
+    | head -n1)
+fi
+[ -n "${DEVICE_NAME:-}" ] || { echo "[error] No available iPhone simulator"; exit 1; }
 
-      UDID=$(xcrun simctl list devices -j | \
-        jq -r --arg NAME "$DEVICE_NAME" '.devices[] | .[] | select(.name==$NAME) | .udid' | head -n1)
-      [ -n "${UDID:-}" ] || { echo "[error] No UDID for $DEVICE_NAME"; exit 1; }
+UDID=$(xcrun simctl list devices -j | \
+  jq -r --arg NAME "$DEVICE_NAME" '.devices[] | .[] | select(.name==$NAME) | .udid' | head -n1)
+[ -n "${UDID:-}" ] || { echo "[error] No UDID for $DEVICE_NAME"; exit 1; }
 
-      echo "$DEVICE_NAME" > .sim_device
-      echo "$UDID"       > .sim_udid
-      echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
+echo "$DEVICE_NAME" > .sim_device
+echo "$UDID"       > .sim_udid
+echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
 
-      # --- Detect Xcode project and scheme ---
-      XCODEPROJ=$(ls -1 *.xcodeproj | head -n1 || true)
-      [ -n "${XCODEPROJ:-}" ] || { echo "[error] No .xcodeproj found in repo root"; ls -la; exit 1; }
-      echo "$XCODEPROJ" > .xcodeproj
+# ---- Detect Xcode project (search subfolders) ----
+# Find the first *.xcodeproj up to 3 levels deep and make it absolute
+XCODEPROJ=$(find . -maxdepth 3 -name "*.xcodeproj" | head -n1 || true)
+[ -n "${XCODEPROJ:-}" ] || { echo "[error] No .xcodeproj found (searched subfolders)"; ls -la; exit 1; }
+XCODEPROJ=$(cd "$(dirname "$XCODEPROJ")" && pwd)/$(basename "$XCODEPROJ")
+echo "$XCODEPROJ" > .xcodeproj
 
-      SCHEME=$(xcodebuild -list -json -project "$XCODEPROJ" | jq -r '.project.schemes[0]')
-      [ -n "${SCHEME:-}" ] || { echo "[error] Could not detect scheme from $XCODEPROJ"; exit 1; }
-      echo "$SCHEME" > .scheme
+# Detect the first scheme from that project
+SCHEME=$(xcodebuild -list -json -project "$XCODEPROJ" | jq -r '.project.schemes[0]')
+[ -n "${SCHEME:-}" ] || { echo "[error] Could not detect scheme from $XCODEPROJ"; exit 1; }
+echo "$SCHEME" > .scheme
 
-      echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
+echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
 
-      # --- Write Fastfile (reads SIM_DEVICE/XCODEPROJ/SCHEME from ENV) ---
-      rm -f fastlane/Fastfile
+# ---- Write Fastfile (reads env vars) ----
+rm -f fastlane/Fastfile
 cat > fastlane/Fastfile <<'EOF'
 default_platform(:ios)
 
@@ -107,14 +110,15 @@ platform :ios do
 end
 EOF
 
-      echo "[info] Fastfile written:"
-      nl -ba fastlane/Fastfile
+echo "[info] Fastfile written:"
+nl -ba fastlane/Fastfile
 
-      # Parse check
-      fastlane lanes
-    '''
+# Parse check (lists lanes)
+fastlane lanes
+'''
   }
 }
+
 
 
 
@@ -134,24 +138,25 @@ EOF
 stage('Unit Tests (Simulator)') {
   steps {
     sh '''
-      set -euo pipefail
-      SIM_DEVICE=$(cat .sim_device)
-      SIM_UDID=$(cat .sim_udid)
-      XCODEPROJ=$(cat .xcodeproj)
-      SCHEME=$(cat .scheme)
+set -euo pipefail
+SIM_DEVICE=$(cat .sim_device)
+SIM_UDID=$(cat .sim_udid)
+XCODEPROJ=$(cat .xcodeproj)
+SCHEME=$(cat .scheme)
 
-      echo "[info] Using simulator: $SIM_DEVICE ($SIM_UDID)"
-      echo "[info] Using project: $XCODEPROJ | scheme: $SCHEME"
+echo "[info] Using simulator: $SIM_DEVICE ($SIM_UDID)"
+echo "[info] Using project: $XCODEPROJ | scheme: $SCHEME"
 
-      # Boot the simulator if needed
-      xcrun simctl boot "$SIM_UDID" || true
-      open -a Simulator || true
+# Boot the simulator (ignore if already booted)
+xcrun simctl boot "$SIM_UDID" || true
+open -a Simulator || true
 
-      # Pass vars as environment to fastlane
-      SIM_DEVICE="$SIM_DEVICE" XCODEPROJ="$XCODEPROJ" SCHEME="$SCHEME" fastlane unit_test
-    '''
+# Pass variables as environment to fastlane
+SIM_DEVICE="$SIM_DEVICE" XCODEPROJ="$XCODEPROJ" SCHEME="$SCHEME" fastlane unit_test
+'''
   }
 }
+
 }
 
 
