@@ -10,7 +10,7 @@ pipeline {
   stages {
     stage('Checkout sample app') {
       steps {
-        git url: 'https://github.com/bitrise-io/sample-apps-ios-simple-objc.git'
+        git url: 'https://github.com/Venkateshsandupatla/sample-apps-ios-simple-objc.git'
       }
     }
 
