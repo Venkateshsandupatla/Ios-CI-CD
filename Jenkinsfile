@@ -136,7 +136,7 @@ EOF
           open -a Simulator || true
 
           # Run tests via Fastlane
-          fastlane unit_test SIM_DEVICE="$SIM_DEVICE"
+          SIM_DEVICE="$SIM_DEVICE" fastlane unit_test 
         '''
       }
     }
