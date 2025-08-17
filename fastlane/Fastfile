@@ -56,7 +56,7 @@ platform :ios do
           -allowProvisioningUpdates \
           -destination '#{destination}' \
         | tee build/logs/xcodebuild.raw.log
-      end
+      fi
     )
 
     app_dir  = File.join(derived, "Build/Products/Debug-iphonesimulator")
