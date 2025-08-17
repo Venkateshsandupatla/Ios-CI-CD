@@ -78,27 +78,36 @@ pipeline {
       echo "$UDID"       > .sim_udid
       echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
 
-      # Minimal Fastfile for unit tests
-      cat > fastlane/Fastfile <<'RUBY'
-      default_platform(:ios)
-      platform :ios do
-        desc "Run unit tests on simulator"
-        lane :unit_test do
-          device = ENV['SIM_DEVICE'] || "iPhone 16 Pro"
-          scan(
-            scheme: "sample-apps-ios-simple-objc",
-            devices: [device],
-            build_for_testing: true,
-            clean: true,
-            output_types: "junit",
-            output_directory: "fastlane/test_output"
-          )
-        end
-      end
-      RUBY
+      # --- WRITE A CLEAN FASTFILE (terminator must be at column 1) ---
+      rm -f fastlane/Fastfile
+cat > fastlane/Fastfile <<'EOF'
+default_platform(:ios)
+
+platform :ios do
+  desc "Run unit tests on simulator"
+  lane :unit_test do
+    device = ENV['SIM_DEVICE'] || "iPhone 16 Pro"
+    scan(
+      scheme: "sample-apps-ios-simple-objc",
+      devices: [device],
+      build_for_testing: true,
+      clean: true,
+      output_types: "junit",
+      output_directory: "fastlane/test_output"
+    )
+  end
+end
+EOF
+
+      echo "[info] Fastfile written:"
+      nl -ba fastlane/Fastfile
+
+      # Quick parse check: list lanes (forces Fastfile parse)
+      fastlane lanes
     '''
   }
 }
+
 
 
     // (Optional) small probe to show what we picked
