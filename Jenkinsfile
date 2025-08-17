@@ -49,14 +49,35 @@ pipeline {
           set -euo pipefail
           mkdir -p fastlane
 
-          # Auto-pick a shutdown iPhone simulator (prefer latest iOS)
-          DEVICE_NAME=$(xcrun simctl list devices | \
-            awk -F '[()]' '/iPhone .*Shutdown/{print $(NF-1)}' | head -n1)
+        # Pick first available iPhone simulator in Shutdown state (stable)
+          DEVICE_NAME=$(xcrun simctl list devices -j | \
+            jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | select(.state=="Shutdown")) | .name' \
+            | head -n1)
 
-          if [ -z "$DEVICE_NAME" ]; then
-            echo "No iPhone simulator found in Shutdown state; falling back to iPhone 16 Pro"
-            DEVICE_NAME="iPhone 16 Pro"
+          if [ -z "${DEVICE_NAME:-}" ]; then
+            echo "[warn] No Shutdown iPhone found; falling back to first available iPhone"
+            DEVICE_NAME=$(xcrun simctl list devices -j | \
+              jq -r '.devices[] | .[] | select(.name|test("^iPhone")) | select(.isAvailable==true) | .name' \
+              | head -n1)
           fi
+
+          if [ -z "${DEVICE_NAME:-}" ]; then
+            echo "[error] Could not find any available iPhone simulator"; exit 1
+          fi
+
+          # Find its UDID
+          UDID=$(xcrun simctl list devices -j | \
+            jq -r --arg NAME "$DEVICE_NAME" '.devices[] | .[] | select(.name==$NAME) | .udid' \
+            | head -n1)
+
+          if [ -z "${UDID:-}" ]; then
+            echo "[error] Could not determine UDID for $DEVICE_NAME"; exit 1
+          fi
+
+          echo "$DEVICE_NAME" > .sim_device
+          echo "$UDID"       > .sim_udid
+          echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
+
 
           cat > fastlane/Fastfile <<'RUBY'
           default_platform(:ios)
@@ -88,17 +109,16 @@ pipeline {
         sh '''
           set -euo pipefail
           SIM_DEVICE=$(cat .sim_device)
-          echo "Using simulator: $SIM_DEVICE"
-          # try to boot it to avoid "no runtime" races
-          UDID=$(xcrun simctl list devices | \
-            awk -v dev="$SIM_DEVICE" -F '[()]' '$0 ~ dev && $0 ~ /Shutdown/ {print $(NF-1); exit}')
-          if [ -n "$UDID" ]; then
-            xcrun simctl boot "$UDID" || true
-            open -a Simulator || true
-          fi
+          SIM_UDID=$(cat .sim_udid)
+          echo "[info] Using simulator: $SIM_DEVICE ($SIM_UDID)"
 
-          # run tests
+          # Boot the simulator if needed (ignore if already booted)
+          xcrun simctl boot "$SIM_UDID" || true
+          open -a Simulator || true
+
+          # Run tests via Fastlane
           fastlane unit_test SIM_DEVICE="$SIM_DEVICE"
+
         '''
       }
     }
