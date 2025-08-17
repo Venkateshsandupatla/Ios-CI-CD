@@ -30,6 +30,18 @@ pipeline {
         '''
       }
     }
+  stage('Bundle install') {
+  steps {
+    sh '''
+      set -euo pipefail
+      if [ -f Gemfile ]; then
+        gem --version
+        bundle install --path vendor/bundle
+      fi
+    '''
+  }
+}
+
 
     stage('Dependencies (Pods if present)') {
       steps {
@@ -43,7 +55,7 @@ pipeline {
     }
 
     // ---------- CHANGED STAGE #1 ----------
-  stage('Fastlane setup') {
+stage('Fastlane setup') {
   steps {
     sh '''
 set -euo pipefail
@@ -69,61 +81,31 @@ echo "$DEVICE_NAME" > .sim_device
 echo "$UDID"       > .sim_udid
 echo "[info] Chosen Simulator: $DEVICE_NAME ($UDID)"
 
-# ---- Detect Xcode project (search subfolders safely) ----
-# Clean any old cache files that could confuse 'find'
+# ---- Detect Xcode project & scheme (search subfolders safely) ----
 rm -f .xcodeproj .xcodeproj_path .scheme || true
-
-# Find the first *.xcodeproj directory up to 3 levels deep
 XCODEPROJ=$(find . -maxdepth 3 -type d -name "*.xcodeproj" | head -n1 || true)
-[ -n "${XCODEPROJ:-}" ] || { echo "[error] No .xcodeproj directory found (searched subfolders)"; ls -la; exit 1; }
+[ -n "${XCODEPROJ:-}" ] || { echo "[error] No .xcodeproj directory found"; ls -la; exit 1; }
 
-# Make absolute
 XCODEPROJ=$(cd "$(dirname "$XCODEPROJ")" && pwd)/"$(basename "$XCODEPROJ")"
 echo "$XCODEPROJ" > .xcodeproj_path
 
-# Detect the first scheme from that project
 SCHEME=$(xcodebuild -list -json -project "$XCODEPROJ" | jq -r '.project.schemes[0]')
 [ -n "${SCHEME:-}" ] || { echo "[error] Could not detect scheme from $XCODEPROJ"; exit 1; }
 echo "$SCHEME" > .scheme
 
 echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
 
-
-# ---- Write Fastfile (reads env vars) ----
-rm -f fastlane/Fastfile
-cat > fastlane/Fastfile <<'EOF'
-default_platform(:ios)
-
-platform :ios do
-  desc "Run unit tests on simulator"
-  lane :unit_test do
-    device  = ENV['SIM_DEVICE']  || "iPhone 16 Pro"
-    proj    = ENV['XCODEPROJ']   || Dir['*.xcodeproj'].first
-    scheme  = ENV['SCHEME']      || "sample-apps-ios-simple-objc"
-
-    UI.message("Using project: #{proj}, scheme: #{scheme}, device: #{device}")
-
-    scan(
-      project: proj,
-      scheme: scheme,
-      devices: [device],
-      clean: true,
-      build_for_testing: true,
-      output_types: "junit",
-      output_directory: "fastlane/test_output"
-    )
-  end
-end
-EOF
-
-echo "[info] Fastfile written:"
-nl -ba fastlane/Fastfile
-
-# Parse check (lists lanes)
-fastlane lanes
+# ---- (Optional) just list lanes from your repo Fastfile ----
+# If you added a Bundle install stage, prefer bundle exec:
+if [ -f Gemfile ]; then
+  bundle exec fastlane lanes || true
+else
+  fastlane lanes || true
+fi
 '''
   }
 }
+
 
 
 
@@ -158,7 +140,7 @@ xcrun simctl boot "$SIM_UDID" || true
 open -a Simulator || true
 
 # Pass variables as environment to fastlane
-SIM_DEVICE="$SIM_DEVICE" XCODEPROJ="$XCODEPROJ" SCHEME="$SCHEME" fastlane unit_test
+SIM_DEVICE="$SIM_DEVICE" XCODEPROJ="$XCODEPROJ" SCHEME="$SCHEME" bundle exec fastlane unit_test
 '''
   }
 }
@@ -166,70 +148,21 @@ SIM_DEVICE="$SIM_DEVICE" XCODEPROJ="$XCODEPROJ" SCHEME="$SCHEME" fastlane unit_t
 stage('Build (Debug - Simulator)') {
   steps {
     sh '''
-set -euo pipefail
+      set -euo pipefail
 
-SIM_DEVICE=$(cat .sim_device)
-SIM_UDID=$(cat .sim_udid)
-XCODEPROJ=$(cat .xcodeproj_path)
-SCHEME=$(cat .scheme)
+      SIM_DEVICE=$(cat .sim_device)
+      SIM_UDID=$(cat .sim_udid)
+      XCODEPROJ=$(cat .xcodeproj_path)
+      SCHEME=$(cat .scheme)
 
-echo "[info] Build Debug | device: $SIM_DEVICE ($SIM_UDID)"
-echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
+      echo "[info] Build Debug | device: $SIM_DEVICE ($SIM_UDID)"
+      echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
 
-# Clean previous outputs
-rm -rf build/DerivedData build/logs build/Artifacts || true
-mkdir -p build/logs build/Artifacts
+      # Run the fastlane lane that does the build + zip
+      SIM_UDID="$SIM_UDID" XCODEPROJ="$XCODEPROJ" SCHEME="$SCHEME" bundle exec fastlane build_debug_sim
 
-DERIVED="build/DerivedData"
-DESTINATION="platform=iOS Simulator,id=$SIM_UDID"
-
-if command -v xcpretty >/dev/null 2>&1; then
-  xcodebuild build \
-    -project "$XCODEPROJ" \
-    -scheme "$SCHEME" \
-    -configuration Debug \
-    -sdk iphonesimulator \
-    -derivedDataPath "$DERIVED" \
-    -allowProvisioningUpdates \
-    -destination "$DESTINATION" \
-  | xcpretty --utf --color > build/logs/xcodebuild.pretty.log
-else
-  xcodebuild build \
-    -project "$XCODEPROJ" \
-    -scheme "$SCHEME" \
-    -configuration Debug \
-    -sdk iphonesimulator \
-    -derivedDataPath "$DERIVED" \
-    -allowProvisioningUpdates \
-    -destination "$DESTINATION" \
-  | tee build/logs/xcodebuild.raw.log
-fi
-
-
-# Locate the built .app (Debug-iphonesimulator)
-# …everything before stays the same…
-
-# Find the built .app
-APP_DIR="build/DerivedData/Build/Products/Debug-iphonesimulator"
-APP_PATH="$(find "$APP_DIR" -type d -name '*.app' | head -n1)"
-[ -z "$APP_PATH" ] && { echo "[error] No .app found in $APP_DIR"; exit 1; }
-echo "[info] Built app: $APP_PATH"
-
-# Zip to workspace-level Artifacts directory
-TARGET_DIR="${WORKSPACE:-$(pwd)}/build/Artifacts"
-mkdir -p "$TARGET_DIR"
-
-# Option A: zip without changing directories
-zip -r "$TARGET_DIR/SimulatorApp.zip" "$APP_PATH"
-
-# Option B (equivalent): cd into the app’s directory then zip just the folder name
-# pushd "$(dirname "$APP_PATH")"
-# zip -r "$TARGET_DIR/SimulatorApp.zip" "$(basename "$APP_PATH")"
-# popd
-
-echo "[info] Wrote artifact: $TARGET_DIR/SimulatorApp.zip"
-
-'''
+      echo "[info] Wrote artifact: build/Artifacts/SimulatorApp.zip"
+    '''
   }
 }
 
@@ -239,8 +172,8 @@ echo "[info] Wrote artifact: $TARGET_DIR/SimulatorApp.zip"
 
 post {
   always {
-    junit allowEmptyResults: true, testResults: 'fastlane/test_output/report.junit'
-    archiveArtifacts artifacts: 'fastlane/test_output/**/*, build/logs/**/*, build/Artifacts/**/*', allowEmptyArchive: true
+  junit allowEmptyResults: true, testResults: 'fastlane/test_output/report.junit'
+  archiveArtifacts artifacts: 'fastlane/test_output/**/*, build/logs/**/*, build/Artifacts/**/*', allowEmptyArchive: true
     echo 'Sanity pipeline finished.'
   }
 }

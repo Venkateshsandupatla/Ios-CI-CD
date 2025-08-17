@@ -1,0 +1,76 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+# fastlane/Fastfile
+default_platform(:ios)
+
+platform :ios do
+  desc "Run unit tests on an iOS simulator"
+  lane :unit_test do
+    device  = ENV['SIM_DEVICE']  || "iPhone 16 Pro"
+    proj    = ENV['XCODEPROJ']   || Dir["**/*.xcodeproj"].first
+    scheme  = ENV['SCHEME']      || "ios-simple-objc"
+
+    UI.message("Using project: #{proj}, scheme: #{scheme}, device: #{device}")
+
+    scan(
+      project: proj,
+      scheme: scheme,
+      devices: [device],
+      clean: true,
+      build_for_testing: true,
+      output_types: "junit",
+      output_directory: "fastlane/test_output"
+    )
+  end
+
+  desc "Build Debug for iOS Simulator and zip .app (no signing)"
+  lane :build_debug_sim do
+    device_udid = ENV['SIM_UDID'] # optional; helps destination selection
+    proj        = ENV['XCODEPROJ'] || Dir["**/*.xcodeproj"].first
+    scheme      = ENV['SCHEME']    || "ios-simple-objc"
+
+    UI.message("Building Debug for simulator | project: #{proj}, scheme: #{scheme}, udid: #{device_udid}")
+
+    derived = "build/DerivedData"
+    sh "rm -rf #{derived} build/Artifacts && mkdir -p build/Artifacts"
+
+    destination = device_udid.to_s.empty? ? "platform=iOS Simulator" : "platform=iOS Simulator,id=#{device_udid}"
+
+    sh %Q[xcodebuild build \
+      -project "#{proj}" \
+      -scheme "#{scheme}" \
+      -configuration Debug \
+      -sdk iphonesimulator \
+      -derivedDataPath "#{derived}" \
+      -allowProvisioningUpdates \
+      -destination '#{destination}' \
+      | xcpretty --utf --color]
+
+    app_dir = File.join(derived, "Build/Products/Debug-iphonesimulator")
+    app_path = Dir[File.join(app_dir, "*.app")].first
+    UI.user_error!("Could not find built .app in #{app_dir}") unless app_path
+
+    UI.message("Zipping #{app_path}")
+    Dir.chdir(app_dir) do
+      app_name = File.basename(app_path)
+      sh %Q[zip -r "../../Artifacts/SimulatorApp.zip" "#{app_name}"]
+    end
+
+    UI.success("Simulator build zipped at build/Artifacts/SimulatorApp.zip")
+  end
+end
