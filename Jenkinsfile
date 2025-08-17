@@ -32,27 +32,35 @@ stage('Bundle install') {
       set -euo pipefail
 
       if [ -f Gemfile ]; then
-        # Read required bundler version from Gemfile.lock (or fallback to latest if absent)
+        # Read the required bundler version from Gemfile.lock (BUNDLED WITH)
         if [ -f Gemfile.lock ]; then
           BUNDLER_VER=$(awk '/^BUNDLED WITH/{getline; gsub(/^ +| +$/,""); print}' Gemfile.lock)
         else
           BUNDLER_VER=""
         fi
 
+        # Install bundler into a local, writable gem home
+        GEM_HOME="${WORKSPACE}/.gems"
+        GEM_PATH="${GEM_HOME}"
+        export GEM_HOME GEM_PATH
+        export PATH="${GEM_HOME}/bin:${PATH}"
+
         if [ -n "${BUNDLER_VER:-}" ]; then
-          echo "[info] Installing bundler ${BUNDLER_VER}"
-          gem install bundler -v "${BUNDLER_VER}"
+          echo "[info] Installing bundler ${BUNDLER_VER} into ${GEM_HOME}"
+          gem install --no-document -i "${GEM_HOME}" bundler -v "${BUNDLER_VER}"
         else
-          echo "[info] Installing latest bundler"
-          gem install bundler
+          echo "[info] Installing latest bundler into ${GEM_HOME}"
+          gem install --no-document -i "${GEM_HOME}" bundler
         fi
 
+        # Use vendor/bundle inside the workspace (no system writes)
         bundle config set path 'vendor/bundle'
         bundle install --jobs=4
       fi
     '''
   }
 }
+
 
 
     stage('Detect simulator & project') {
