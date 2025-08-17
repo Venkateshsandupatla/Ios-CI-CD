@@ -9,16 +9,13 @@ pipeline {
   }
 
   stages {
-    stage('Checkout app repo') {
-       steps {
-        git url: 'https://github.com/Venkateshsandupatla/Ios-CI-CD.git'
-    }
-    }
+
 
     stage('Tooling sanity') {
       steps {
         sh '''
           set -euo pipefail
+          echo "=== Repo root ==="; ls -la
           echo "=== Xcode ==="; xcodebuild -version
           echo "=== Ruby ==="; ruby -v
           echo "PATH=$PATH"
