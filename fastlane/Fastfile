@@ -1,13 +1,13 @@
 default_platform(:ios)
 
 platform :ios do
-  desc "Run unit tests on a simulator and produce JUnit"
+  desc "Run unit tests on the chosen simulator and output JUnit"
   lane :unit_test do
-    device  = ENV['SIM_DEVICE'] || "iPhone 16 Pro"
-    proj    = ENV['XCODEPROJ']  # Jenkins will pass absolute path
-    scheme  = ENV['SCHEME']     # Jenkins will pass detected scheme
+    device  = ENV['SIM_DEVICE']  || "iPhone 16 Pro"
+    proj    = ENV['XCODEPROJ']   || Dir['*.xcodeproj'].first
+    scheme  = ENV['SCHEME']      || UI.user_error!("SCHEME not set")
 
-    UI.message("Using project: #{proj}, scheme: #{scheme}, device: #{device}")
+    UI.message("Unit tests -> project: #{proj}, scheme: #{scheme}, device: #{device}")
 
     scan(
       project: proj,
@@ -16,48 +16,58 @@ platform :ios do
       clean: true,
       build_for_testing: true,
       output_types: "junit",
-      output_directory: "fastlane/test_output"
+      output_directory: "fastlane/test_output",
+      fail_build: true
     )
   end
 
-  desc "Build Debug for Simulator and zip the .app"
+  desc "Build Debug for Simulator and zip to build/Artifacts/SimulatorApp.zip"
   lane :build_debug_sim do
-    proj   = ENV['XCODEPROJ']
-    scheme = ENV['SCHEME']
-    udid   = ENV['SIM_UDID']
+    proj    = ENV['XCODEPROJ']   || Dir['*.xcodeproj'].first
+    scheme  = ENV['SCHEME']      || UI.user_error!("SCHEME not set")
+    udid    = ENV['SIM_UDID']    || UI.user_error!("SIM_UDID not set")
 
-    dest = "platform=iOS Simulator,id=#{udid}"
     derived = "build/DerivedData"
+    sh "rm -rf #{derived} build/logs build/Artifacts || true"
+    sh "mkdir -p build/logs build/Artifacts"
 
-    sh %(
-      set -euo pipefail
-      rm -rf #{derived} build/logs build/Artifacts || true
-      mkdir -p build/logs build/Artifacts
+    destination = "platform=iOS Simulator,id=#{udid}"
+    UI.message("Build Debug (sim) -> project: #{proj}, scheme: #{scheme}, destination: #{destination}")
+
+    sh %Q(
+      set -eo pipefail
+      if command -v xcpretty >/dev/null 2>&1; then
+        xcodebuild build \
+          -project "#{proj}" \
+          -scheme "#{scheme}" \
+          -configuration Debug \
+          -sdk iphonesimulator \
+          -derivedDataPath "#{derived}" \
+          -allowProvisioningUpdates \
+          -destination '#{destination}' \
+        | xcpretty --utf --color > build/logs/xcodebuild.pretty.log
+      else
+        xcodebuild build \
+          -project "#{proj}" \
+          -scheme "#{scheme}" \
+          -configuration Debug \
+          -sdk iphonesimulator \
+          -derivedDataPath "#{derived}" \
+          -allowProvisioningUpdates \
+          -destination '#{destination}' \
+        | tee build/logs/xcodebuild.raw.log
+      end
     )
 
-    sh %(
-      set -o pipefail
-      xcodebuild build \
-        -project "#{proj}" \
-        -scheme "#{scheme}" \
-        -configuration Debug \
-        -sdk iphonesimulator \
-        -derivedDataPath "#{derived}" \
-        -allowProvisioningUpdates \
-        -destination '#{dest}' \
-      | xcpretty --utf --color > build/logs/xcodebuild.pretty.log
-    )
+    app_dir  = File.join(derived, "Build/Products/Debug-iphonesimulator")
+    app_path = Actions.sh(%Q(find "#{app_dir}" -type d -name "*.app" | head -n1), log: false).strip
+    UI.user_error!("No .app found in #{app_dir}") if app_path.to_s.empty?
 
-    app_dir = "build/DerivedData/Build/Products/Debug-iphonesimulator"
-    app_path = Actions.sh("find #{app_dir} -type d -name '*.app' | head -n1").strip
-    UI.user_error!("No .app found in #{app_dir}") if app_path.empty?
-
-    target_dir = ENV['WORKSPACE'] || Dir.pwd
-    target_dir = File.join(target_dir, "build/Artifacts")
+    target_dir = File.expand_path("build/Artifacts")
     FileUtils.mkdir_p(target_dir)
 
     zip_path = File.join(target_dir, "SimulatorApp.zip")
     sh %Q(zip -r "#{zip_path}" "#{app_path}")
-    UI.message("Wrote artifact: #{zip_path}")
+    UI.success("Wrote artifact: #{zip_path}")
   end
 end
