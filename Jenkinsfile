@@ -3,6 +3,8 @@ pipeline {
   options { ansiColor('xterm'); timestamps() }
 
   environment {
+    // Add Homebrew + common gem/bin dirs to PATH for the jenkins shell
+    PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     LC_ALL = 'en_US.UTF-8'
     LANG   = 'en_US.UTF-8'
   }
@@ -20,6 +22,9 @@ pipeline {
           set -euo pipefail
           echo "=== Xcode ==="; xcodebuild -version
           echo "=== Ruby ==="; ruby -v
+          set -e
+          echo "PATH=$PATH"
+          which fastlane || true
           echo "=== Fastlane ==="; fastlane --version
           echo "=== Cocoapods ==="; pod --version || true
           echo "=== Simulators ==="; xcrun simctl list devices | head -n 50
