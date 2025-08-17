@@ -180,30 +180,31 @@ echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
 rm -rf build/DerivedData build/logs build/Artifacts || true
 mkdir -p build/logs build/Artifacts
 
-DESTINATION="-destination platform=iOS\\ Simulator,id=$SIM_UDID"
 DERIVED="build/DerivedData"
+DESTINATION="platform=iOS Simulator,id=$SIM_UDID"
 
-# Base xcodebuild command
-XC_BUILD=(xcodebuild
-  build
-  -project "$XCODEPROJ"
-  -scheme "$SCHEME"
-  -configuration Debug
-  -sdk iphonesimulator
-  -derivedDataPath "$DERIVED"
-  -allowProvisioningUpdates
-  $DESTINATION
-)
-
-echo "[info] Running: ${XC_BUILD[*]}"
-
-# If xcpretty exists, use it for nicer logs; else fallback to tee
 if command -v xcpretty >/dev/null 2>&1; then
-  "${XC_BUILD[@]}" | xcpretty --utf --color > build/logs/xcodebuild.pretty.log
+  xcodebuild build \
+    -project "$XCODEPROJ" \
+    -scheme "$SCHEME" \
+    -configuration Debug \
+    -sdk iphonesimulator \
+    -derivedDataPath "$DERIVED" \
+    -allowProvisioningUpdates \
+    -destination "$DESTINATION" \
+  | xcpretty --utf --color > build/logs/xcodebuild.pretty.log
 else
-  echo "[warn] xcpretty not found; using raw logs"
-  "${XC_BUILD[@]}" | tee build/logs/xcodebuild.raw.log
+  xcodebuild build \
+    -project "$XCODEPROJ" \
+    -scheme "$SCHEME" \
+    -configuration Debug \
+    -sdk iphonesimulator \
+    -derivedDataPath "$DERIVED" \
+    -allowProvisioningUpdates \
+    -destination "$DESTINATION" \
+  | tee build/logs/xcodebuild.raw.log
 fi
+
 
 # Locate the built .app (Debug-iphonesimulator)
 APP_DIR="$DERIVED/Build/Products/Debug-iphonesimulator"
