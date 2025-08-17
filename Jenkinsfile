@@ -163,15 +163,76 @@ SIM_DEVICE="$SIM_DEVICE" XCODEPROJ="$XCODEPROJ" SCHEME="$SCHEME" fastlane unit_t
   }
 }
 
+stage('Build (Debug - Simulator)') {
+  steps {
+    sh '''
+set -euo pipefail
+
+SIM_DEVICE=$(cat .sim_device)
+SIM_UDID=$(cat .sim_udid)
+XCODEPROJ=$(cat .xcodeproj_path)
+SCHEME=$(cat .scheme)
+
+echo "[info] Build Debug | device: $SIM_DEVICE ($SIM_UDID)"
+echo "[info] Project: $XCODEPROJ | Scheme: $SCHEME"
+
+# Clean previous outputs
+rm -rf build/DerivedData build/logs build/Artifacts || true
+mkdir -p build/logs build/Artifacts
+
+DESTINATION="-destination platform=iOS\\ Simulator,id=$SIM_UDID"
+DERIVED="build/DerivedData"
+
+# Base xcodebuild command
+XC_BUILD=(xcodebuild
+  build
+  -project "$XCODEPROJ"
+  -scheme "$SCHEME"
+  -configuration Debug
+  -sdk iphonesimulator
+  -derivedDataPath "$DERIVED"
+  -allowProvisioningUpdates
+  $DESTINATION
+)
+
+echo "[info] Running: ${XC_BUILD[*]}"
+
+# If xcpretty exists, use it for nicer logs; else fallback to tee
+if command -v xcpretty >/dev/null 2>&1; then
+  "${XC_BUILD[@]}" | xcpretty --utf --color > build/logs/xcodebuild.pretty.log
+else
+  echo "[warn] xcpretty not found; using raw logs"
+  "${XC_BUILD[@]}" | tee build/logs/xcodebuild.raw.log
+fi
+
+# Locate the built .app (Debug-iphonesimulator)
+APP_DIR="$DERIVED/Build/Products/Debug-iphonesimulator"
+APP_PATH=$(find "$APP_DIR" -type d -name "*.app" | head -n1 || true)
+if [ -z "${APP_PATH:-}" ]; then
+  echo "[error] .app not found in $APP_DIR"
+  ls -R "$DERIVED/Build/Products" || true
+  exit 1
+fi
+echo "[info] Built app: $APP_PATH"
+
+# Zip the .app for archiving
+( cd "$(dirname "$APP_PATH")" && zip -r "$(pwd)/../../Artifacts/SimulatorApp.zip" "$(basename "$APP_PATH")" )
+echo "[info] Zipped app to build/Artifacts/SimulatorApp.zip"
+'''
+  }
 }
 
 
-  post {
-    always {
-      junit allowEmptyResults: true, testResults: 'fastlane/test_output/report.junit'
-      archiveArtifacts artifacts: 'fastlane/test_output/**/*', allowEmptyArchive: true
-      echo 'Sanity pipeline finished.'
-    }
+}
+
+
+post {
+  always {
+    junit allowEmptyResults: true, testResults: 'fastlane/test_output/report.junit'
+    archiveArtifacts artifacts: 'fastlane/test_output/**/*, build/logs/**/*, build/Artifacts/**/*', allowEmptyArchive: true
+    echo 'Sanity pipeline finished.'
   }
+}
+
 
 }
