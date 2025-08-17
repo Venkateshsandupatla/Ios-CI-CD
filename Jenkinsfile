@@ -207,18 +207,28 @@ fi
 
 
 # Locate the built .app (Debug-iphonesimulator)
-APP_DIR="$DERIVED/Build/Products/Debug-iphonesimulator"
-APP_PATH=$(find "$APP_DIR" -type d -name "*.app" | head -n1 || true)
-if [ -z "${APP_PATH:-}" ]; then
-  echo "[error] .app not found in $APP_DIR"
-  ls -R "$DERIVED/Build/Products" || true
-  exit 1
-fi
+# …everything before stays the same…
+
+# Find the built .app
+APP_DIR="build/DerivedData/Build/Products/Debug-iphonesimulator"
+APP_PATH="$(find "$APP_DIR" -type d -name '*.app' | head -n1)"
+[ -z "$APP_PATH" ] && { echo "[error] No .app found in $APP_DIR"; exit 1; }
 echo "[info] Built app: $APP_PATH"
 
-# Zip the .app for archiving
-( cd "$(dirname "$APP_PATH")" && zip -r "$(pwd)/../../Artifacts/SimulatorApp.zip" "$(basename "$APP_PATH")" )
-echo "[info] Zipped app to build/Artifacts/SimulatorApp.zip"
+# Zip to workspace-level Artifacts directory
+TARGET_DIR="${WORKSPACE:-$(pwd)}/build/Artifacts"
+mkdir -p "$TARGET_DIR"
+
+# Option A: zip without changing directories
+zip -r "$TARGET_DIR/SimulatorApp.zip" "$APP_PATH"
+
+# Option B (equivalent): cd into the app’s directory then zip just the folder name
+# pushd "$(dirname "$APP_PATH")"
+# zip -r "$TARGET_DIR/SimulatorApp.zip" "$(basename "$APP_PATH")"
+# popd
+
+echo "[info] Wrote artifact: $TARGET_DIR/SimulatorApp.zip"
+
 '''
   }
 }
