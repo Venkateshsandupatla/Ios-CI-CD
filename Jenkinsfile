@@ -26,17 +26,34 @@ pipeline {
       }
     }
 
-    stage('Bundle install') {
-      steps {
-        sh '''
-          set -euo pipefail
-          if [ -f Gemfile ]; then
-            bundle config set path 'vendor/bundle'
-            bundle install --jobs=4
-          fi
-        '''
-      }
-    }
+stage('Bundle install') {
+  steps {
+    sh '''
+      set -euo pipefail
+
+      if [ -f Gemfile ]; then
+        # Read required bundler version from Gemfile.lock (or fallback to latest if absent)
+        if [ -f Gemfile.lock ]; then
+          BUNDLER_VER=$(awk '/^BUNDLED WITH/{getline; gsub(/^ +| +$/,""); print}' Gemfile.lock)
+        else
+          BUNDLER_VER=""
+        fi
+
+        if [ -n "${BUNDLER_VER:-}" ]; then
+          echo "[info] Installing bundler ${BUNDLER_VER}"
+          gem install bundler -v "${BUNDLER_VER}"
+        else
+          echo "[info] Installing latest bundler"
+          gem install bundler
+        fi
+
+        bundle config set path 'vendor/bundle'
+        bundle install --jobs=4
+      fi
+    '''
+  }
+}
+
 
     stage('Detect simulator & project') {
       steps {
