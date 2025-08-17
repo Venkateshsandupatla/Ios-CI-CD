@@ -152,6 +152,7 @@ stage('Unit Tests (Simulator)') {
     '''
   }
 }
+}
 
 
   post {
@@ -161,4 +162,5 @@ stage('Unit Tests (Simulator)') {
       echo 'Sanity pipeline finished.'
     }
   }
+
 }
